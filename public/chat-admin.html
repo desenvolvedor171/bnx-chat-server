@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atendimento — BNX SENSI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #07050b; color: #f7f3ff; }
+    header { padding: 20px; text-align: center; border-bottom: 3px solid #f2b705; background: #0d0b0d; }
+    header h1 span { color: #b06cff; }
+    main { max-width: 1000px; margin: 0 auto; padding: 20px 16px 60px; }
+    .card { background: #100b18; border: 1px solid rgba(176,108,255,.18); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    input, select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(176,108,255,.18); background: #08050b; color: #fff; margin-bottom: 10px; }
+    button { background: #8b45ff; color: #fff; border: none; border-radius: 8px; padding: 11px 18px; font-weight: 700; cursor: pointer; }
+    button.ghost { background: transparent; border: 1px solid #8b45ff; }
+    .error { color: #ff9a9a; }
+    .layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+    .conv { border: 1px solid rgba(176,108,255,.18); border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: pointer; }
+    .conv:hover, .conv.active { border-color: #8b45ff; }
+    .conv .top { display: flex; justify-content: space-between; font-weight: 800; }
+    .conv small { color: #aaa1b6; }
+    .badge { display: inline-block; font-size: 11px; border-radius: 12px; padding: 2px 10px; margin-left: 6px; }
+    .badge.new { background: #d64545; color: #fff; }
+    .badge.open { background: #f2b705; color: #111; }
+    .badge.done { background: #2e9e5b; color: #fff; }
+    #thread { display: flex; flex-direction: column; height: 520px; }
+    #msgs { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 6px 2px; }
+    .msg { max-width: 80%; padding: 9px 13px; border-radius: 14px; font-size: 14px; word-break: break-word; }
+    .msg.them { align-self: flex-start; background: #1d1428; }
+    .msg.me { align-self: flex-end; background: #8b45ff; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    .row input { margin: 0; }
+    .toolbar { display: flex; gap: 8px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+    .toolbar .spacer { flex: 1; }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header><h1>Atendimento <span>BNX SENSI</span></h1></header>
+  <main>
+    <div id="login" class="card" style="display:none; max-width:400px; margin:20px auto;">
+      <h2>Acesso do vendedor</h2><br>
+      <input id="username" placeholder="Usuário" autocomplete="username">
+      <input id="password" type="password" placeholder="Senha" autocomplete="current-password">
+      <p class="error" id="loginError"></p>
+      <button id="btnLogin">Entrar</button>
+    </div>
+    <div id="dash" style="display:none">
+      <div class="card toolbar">
+        <strong id="count">0 conversas</strong>
+        <span class="spacer"></span>
+        <button id="btnRefresh" class="ghost">Atualizar</button>
+        <button id="btnLogout" class="ghost">Sair</button>
+      </div>
+      <div class="layout">
+        <div class="card"><h3>Conversas</h3><br><div id="list"></div></div>
+        <div class="card" id="thread">
+          <div id="emptyThread" class="empty">Selecione uma conversa.</div>
+          <div id="chatBox" style="display:none; flex:1; display:flex; flex-direction:column;">
+            <h3 id="tTitle"></h3>
+            <div class="toolbar">
+              <small id="tInfo"></small><span class="spacer"></span>
+              <button class="ghost" data-st="novo">Novo</button>
+              <button class="ghost" data-st="atendimento">Em atendimento</button>
+              <button class="ghost" data-st="finalizado">Finalizar</button>
+            </div>
+            <div id="msgs"></div>
+            <div class="row">
+              <input id="reply" placeholder="Responder ao cliente..." autocomplete="off">
+              <button id="btnSend">Enviar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script>
+    let currentId = null, listTimer = null, msgTimer = null;
+
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const badge = s => s === 'novo' ? '<span class="badge new">NOVO</span>'
+      : s === 'atendimento' ? '<span class="badge open">ATENDIMENTO</span>'
+      : '<span class="badge done">FINALIZADO</span>';
+
+    async function checkLogin() {
+      const r = await fetch('/api/seller/me');
+      const d = await r.json();
+      if (d.loggedIn) showDash();
+      else {
+        document.getElementById('login').style.display = 'block';
+        document.getElementById('dash').style.display = 'none';
+      }
+    }
+
+    document.getElementById('btnLogin').addEventListener('click', async () => {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const r = await fetch('/api/seller/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (r.ok) showDash();
+      else document.getElementById('loginError').textContent = 'Usuário ou senha inválidos.';
+    });
+
+    async function showDash() {
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('dash').style.display = 'block';
+      await loadList();
+      listTimer = setInterval(() => { if (!document.hidden) loadList(true); }, 5000);
+    }
+
+    async function loadList(silent) {
+      const r = await fetch('/api/seller/conversations');
+      if (r.status === 401) { location.reload(); return; }
+      const list = await r.json();
+      document.getElementById('count').textContent = `${list.length} conversa(s)`;
+      const box = document.getElementById('list');
+      box.innerHTML = list.length ? '' : '<p class="empty">Nenhuma conversa ainda.</p>';
+      for (const c of list) {
+        const div = document.createElement('div');
+        div.className = 'conv' + (c.id === currentId ? ' active' : '');
+        div.innerHTML = `<div class="top"><span>${esc(c.code)}</span><span>R$ ${Number(c.total).toFixed(2)}</span></div>
+          <small>${esc(c.buyer_name)}</small>${c.unread ? ' <span class="badge new">NOVA MSG</span>' : ''} ${badge(c.status)}`;
+        div.onclick = () => openConv(c.id);
+        box.appendChild(div);
+      }
+    }
+
+    async function openConv(id) {
+      currentId = id;
+      if (msgTimer) clearInterval(msgTimer);
+      await loadThread();
+      msgTimer = setInterval(() => { if (!document.hidden && currentId) loadThread(); }, 3000);
+      loadList(true);
+    }
+
+    async function loadThread() {
+      const r = await fetch(`/api/seller/conversation/${currentId}`);
+      if (!r.ok) return;
+      const c = await r.json();
+      document.getElementById('emptyThread').style.display = 'none';
+      document.getElementById('chatBox').style.display = 'flex';
+      document.getElementById('tTitle').textContent = `${c.code} — ${c.buyer_name}`;
+      document.getElementById('tInfo').textContent =
+        c.items.map(i => i.name).join(', ') + ` — R$ ${Number(c.total).toFixed(2)}`;
+      const box = document.getElementById('msgs');
+      box.innerHTML = '';
+      for (const m of c.messages) {
+        const div = document.createElement('div');
+        div.className = 'msg ' + (m.sender === 'seller' ? 'me' : 'them');
+        div.textContent = m.text;
+        box.appendChild(div);
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function sendReply() {
+      const input = document.getElementById('reply');
+      const text = input.value.trim();
+      if (!text || !currentId) return;
+      input.value = '';
+      await fetch(`/api/seller/conversation/${currentId}/message`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      loadThread();
+    }
+    document.getElementById('btnSend').addEventListener('click', sendReply);
+    document.getElementById('reply').addEventListener('keydown', e => {
+      if (e.key === 'Enter') sendReply();
+    });
+
+    document.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', async () => {
+      if (!currentId) return;
+      await fetch(`/api/seller/conversation/${currentId}/status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: b.dataset.st })
+      });
+      loadList(true);
+    }));
+
+    document.getElementById('btnRefresh').addEventListener('click', () => loadList());
+    document.getElementById('btnLogout').addEventListener('click', async () => {
+      await fetch('/api/seller/logout', { method: 'POST' });
+      location.reload();
+    });
+
+    checkLogin();
+  </script>
+</body>
+</html>

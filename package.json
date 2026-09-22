@@ -1,0 +1,16 @@
+{
+  "name": "bnx-chat-server",
+  "version": "1.0.0",
+  "description": "Backend do chat da loja BNX SENSI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "pg": "^8.23.0"
+  }
+}
