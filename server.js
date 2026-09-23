@@ -103,10 +103,8 @@ async function getConv(id, code) {
 
 // ---------- Chat do cliente ----------
 app.post('/api/chat/start', async (req, res) => {
-  const { buyerName, items, total } = req.body || {};
-  if (!buyerName || String(buyerName).trim().length < 2 || String(buyerName).length > 60) {
-    return res.status(400).json({ error: 'Nome inválido.' });
-  }
+  const { items, total } = req.body || {};
+  const buyerName = 'Cliente';
   if (!Array.isArray(items) || !items.length || items.length > 20) {
     return res.status(400).json({ error: 'Itens inválidos.' });
   }
@@ -131,7 +129,7 @@ app.post('/api/chat/start', async (req, res) => {
 
   await db.execute({
     sql: 'INSERT INTO messages (conversation_id, sender, text) VALUES (?, ?, ?)',
-    args: [conv.id, 'seller', `Olá ${String(buyerName).trim().split(' ')[0]}! Recebemos seu pedido ${conv.code}. Envie o comprovante do Pix aqui para liberarmos seu produto. 👊`]
+    args: [conv.id, 'seller', `Olá! Recebemos seu pedido ${conv.code}. Envie o comprovante do Pix aqui para liberarmos seu produto. 👊`]
   });
   res.json(conv);
 });
